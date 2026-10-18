@@ -77,4 +77,21 @@ class SigningTest {
         out.writeBytes(bytes)
         assertTrue(SignatureVerifier.verify(out).any { it.status == SigStatus.INVALID })
     }
+
+    @Test fun signatureCarriesAdRbPolicy() {
+        val out = tmp.newFile()
+        PadesSigner.sign(testSigner(), blankPdf(1), out, StampSpec(0, 0.1f, 0.8f, true))
+        val bytes = out.readBytes()
+        PDDocument.load(out).use { doc ->
+            val sig = doc.signatureDictionaries.first()
+            val cms = org.spongycastle.cms.CMSSignedData(
+                org.spongycastle.cms.CMSProcessableByteArray(sig.getSignedContent(bytes)), sig.getContents(bytes))
+            val attrs = cms.signerInfos.signers.first().signedAttributes
+            val policy = attrs.get(org.spongycastle.asn1.pkcs.PKCSObjectIdentifiers.id_aa_ets_sigPolicyId)
+            assertTrue(policy != null)
+            val id = org.spongycastle.asn1.esf.SignaturePolicyId.getInstance(policy.attrValues.getObjectAt(0))
+            assertEquals("2.16.76.1.7.1.11.1.3", id.sigPolicyId.id)
+            assertTrue(attrs.get(org.spongycastle.asn1.cms.CMSAttributes.signingTime) == null)
+        }
+    }
 }
