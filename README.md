@@ -16,9 +16,10 @@ chave fixa (`app/debug.keystore`), então novas versões instalam por cima sem a
 Ative "instalar apps desconhecidos" para o navegador/Arquivos.
 
 ## Limites conhecidos
-- Gera **PAdES (CAdES-detached, SHA-256, cadeia embutida, ESS signing-certificate-v2)**. Ainda **não** inclui
-  `SignaturePolicyIdentifier` (política AD-RB) nem carimbo de tempo; por isso o Verificador do ITI pode
-  validar a assinatura mas não classificá-la como "AD-RB". Falta confirmar o OID e o hash oficial da política.
+- Gera **PAdES AD-RB v1.3** (CAdES-detached, SHA-256, cadeia embutida, `signingCertificateV2` e `sigPolicyId`
+  `2.16.76.1.7.1.11.1.3`, com o hash do arquivo oficial da LPA do ITI). Não há carimbo de tempo (isso seria AD-RT).
+  A conformidade com o Verificador do ITI ainda precisa ser confirmada com um A1 real: o teste automático só prova que
+  o atributo da política está presente e que o PDF valida no `pdfsig`.
 - Não há trava por biometria/PIN: quem desbloquear o celular pode assinar. Mantenha o bloqueio de tela.
 - Páginas com `/Rotate` não têm o posicionamento do selo tratado.
 - A chave importada não pode ser exportada: guarde o .pfx original.

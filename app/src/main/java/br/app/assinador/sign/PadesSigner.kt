@@ -15,7 +15,18 @@ import com.tom_roush.pdfbox.pdmodel.interactive.digitalsignature.SignatureOption
 import com.tom_roush.pdfbox.pdmodel.interactive.form.PDAcroForm
 import com.tom_roush.pdfbox.pdmodel.interactive.form.PDField
 import com.tom_roush.pdfbox.pdmodel.interactive.form.PDSignatureField
+import org.spongycastle.asn1.cms.Attribute
 import org.spongycastle.asn1.cms.AttributeTable
+import org.spongycastle.asn1.cms.CMSAttributes
+import org.spongycastle.asn1.ASN1EncodableVector
+import org.spongycastle.asn1.ASN1ObjectIdentifier
+import org.spongycastle.asn1.DERIA5String
+import org.spongycastle.asn1.DEROctetString
+import org.spongycastle.asn1.DERSet
+import org.spongycastle.asn1.esf.OtherHashAlgAndValue
+import org.spongycastle.asn1.esf.SigPolicyQualifierInfo
+import org.spongycastle.asn1.esf.SigPolicyQualifiers
+import org.spongycastle.asn1.esf.SignaturePolicyId
 import org.spongycastle.asn1.ess.ESSCertIDv2
 import org.spongycastle.asn1.ess.SigningCertificateV2
 import org.spongycastle.asn1.nist.NISTObjectIdentifiers
@@ -24,7 +35,6 @@ import org.spongycastle.asn1.x509.AlgorithmIdentifier
 import org.spongycastle.cms.CMSAttributeTableGenerator
 import org.spongycastle.cms.CMSProcessableByteArray
 import org.spongycastle.cms.CMSSignedDataGenerator
-import org.spongycastle.cms.DefaultSignedAttributeTableGenerator
 import org.spongycastle.cms.jcajce.JcaSignerInfoGeneratorBuilder
 import org.spongycastle.cert.jcajce.JcaCertStore
 import org.spongycastle.jce.provider.BouncyCastleProvider
@@ -153,16 +163,24 @@ object PadesSigner {
         }
     }
 
-    /** CMS CAdES-detached: SHA-256, cadeia embutida, atributo ESS signing-certificate-v2. */
+    /** CMS CAdES-detached AD-RB: SHA-256, cadeia embutida, ESS signing-certificate-v2 e política ICP-Brasil. */
     internal fun cms(signer: SignerKey, content: ByteArray): ByteArray {
         val cert = signer.certificate
         val certHash = MessageDigest.getInstance("SHA-256").digest(cert.encoded)
         val ess = SigningCertificateV2(ESSCertIDv2(AlgorithmIdentifier(NISTObjectIdentifiers.id_sha256), certHash))
 
-        val base = DefaultSignedAttributeTableGenerator()
+        // Atributos assinados exigidos pela política AD-RB: contentType, messageDigest,
+        // signingCertificateV2 e sigPolicyId. Sem signingTime nem CMSAlgorithmProtection
+        // (em PAdES a data vai no /M do dicionário da assinatura).
         val attrs = object : CMSAttributeTableGenerator {
-            override fun getAttributes(parameters: MutableMap<Any?, Any?>?): AttributeTable =
-                base.getAttributes(parameters).add(PKCSObjectIdentifiers.id_aa_signingCertificateV2, ess)
+            override fun getAttributes(parameters: MutableMap<Any?, Any?>): AttributeTable {
+                val v = ASN1EncodableVector()
+                v.add(Attribute(CMSAttributes.contentType, DERSet(parameters[CMSAttributeTableGenerator.CONTENT_TYPE] as ASN1ObjectIdentifier)))
+                v.add(Attribute(CMSAttributes.messageDigest, DERSet(DEROctetString(parameters[CMSAttributeTableGenerator.DIGEST] as ByteArray))))
+                v.add(Attribute(PKCSObjectIdentifiers.id_aa_signingCertificateV2, DERSet(ess)))
+                v.add(Attribute(PKCSObjectIdentifiers.id_aa_ets_sigPolicyId, DERSet(policyId())))
+                return AttributeTable(DERSet(v))
+            }
         }
 
         val contentSigner = KeystoreContentSigner(signer)
@@ -175,6 +193,20 @@ object PadesSigner {
         gen.addSignerInfoGenerator(signerInfo)
         gen.addCertificates(JcaCertStore(signer.chain))
         return gen.generate(CMSProcessableByteArray(content), false).encoded
+    }
+
+    /** Política AD-RB v1.3 (PAdES) da LPA da ICP-Brasil: OID e SHA-256 do arquivo PA_PAdES_AD_RB_v1_3.der. */
+    private const val POLICY_OID = "2.16.76.1.7.1.11.1.3"
+    private const val POLICY_URI = "http://politicas.icpbrasil.gov.br/PA_PAdES_AD_RB_v1_3.der"
+    private const val POLICY_SHA256 = "23da544aef71f7a75dc85fa6e17a83875741e4baef41ec178258a5c86ace54dd"
+
+    internal fun policyId(): SignaturePolicyId {
+        val hash = POLICY_SHA256.chunked(2).map { it.toInt(16).toByte() }.toByteArray()
+        return SignaturePolicyId(
+            ASN1ObjectIdentifier(POLICY_OID),
+            OtherHashAlgAndValue(AlgorithmIdentifier(NISTObjectIdentifiers.id_sha256), DEROctetString(hash)),
+            SigPolicyQualifiers(arrayOf(SigPolicyQualifierInfo(PKCSObjectIdentifiers.id_spq_ets_uri, DERIA5String(POLICY_URI)))),
+        )
     }
 
     /** Delega a assinatura bruta ao Keystore; a chave privada nunca sai dele. */
