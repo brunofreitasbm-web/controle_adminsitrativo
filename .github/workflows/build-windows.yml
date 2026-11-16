@@ -1,0 +1,57 @@
+name: Build Windows (.exe)
+
+on:
+  push:
+  workflow_dispatch:
+
+jobs:
+  build:
+    # windows-2022 traz o WiX 3, que o jpackage precisa para gerar o instalador .exe
+    runs-on: windows-2022
+    defaults:
+      run:
+        working-directory: desktop
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Testes (assinatura + verificação)
+        run: ./gradlew.bat test --no-daemon
+
+      - name: Reunir JARs
+        run: ./gradlew.bat jpackageInput --no-daemon
+
+      - name: Instalador .exe (atalho na Área de Trabalho + Menu Iniciar)
+        run: |
+          $mods = "java.base,java.desktop,java.logging,java.management,java.naming,java.prefs,java.sql,java.xml,jdk.crypto.ec"
+          jpackage --type exe --name "Assinar PDF" --app-version 1.0.0 `
+            --vendor "Assinador" --description "Assina PDFs com certificado A1 (PAdES)" `
+            --input build/jpackage-input --main-jar assinador-desktop-1.0.0.jar `
+            --main-class br.app.assinador.desktop.MainKt `
+            --add-modules $mods --java-options "-Dfile.encoding=UTF-8" `
+            --win-shortcut --win-menu --win-dir-chooser `
+            --win-upgrade-uuid 6b1f7a52-3c1e-4c58-9a3d-2f6a8f0c9e41 `
+            --dest dist
+
+      - name: Versão portátil (zip, sem instalar)
+        run: |
+          $mods = "java.base,java.desktop,java.logging,java.management,java.naming,java.prefs,java.sql,java.xml,jdk.crypto.ec"
+          jpackage --type app-image --name "Assinar PDF" --app-version 1.0.0 `
+            --input build/jpackage-input --main-jar assinador-desktop-1.0.0.jar `
+            --main-class br.app.assinador.desktop.MainKt `
+            --add-modules $mods --java-options "-Dfile.encoding=UTF-8" `
+            --dest portable
+          Copy-Item ../desktop/packaging/Criar-atalho-na-area-de-trabalho.bat "portable/Assinar PDF/"
+          Compress-Archive -Path "portable/Assinar PDF" -DestinationPath dist/Assinar-PDF-portatil.zip
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: assinador-windows
+          path: |
+            desktop/dist/*.exe
+            desktop/dist/*.zip
