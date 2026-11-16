@@ -1,5 +1,6 @@
 """Assinador de PDF local (A1, PAdES AD-RB). Roda só em 127.0.0.1 — nada sai do seu computador."""
 import hmac
+import os
 import io
 import re
 import secrets
@@ -14,7 +15,7 @@ import cofre
 
 app = Flask(__name__)
 app.config["MAX_CONTENT_LENGTH"] = 200 * 1024 * 1024
-SAIDA = Path.home() / "Documents" / "Assinados"
+SAIDA = Path.home() / "Downloads" / "Assinados"
 
 
 TOKEN = secrets.token_urlsafe(32)  # novo a cada execução; só a nossa página (mesma origem) o conhece
@@ -114,6 +115,13 @@ def assinar_pdfs():
     return jsonify(pasta=str(SAIDA), resultados=resultados)
 
 
+@app.post("/api/abrir-pasta")
+def abrir_pasta():
+    SAIDA.mkdir(parents=True, exist_ok=True)
+    os.startfile(SAIDA)  # abre no Explorer (só Windows)
+    return jsonify(ok=True)
+
+
 @app.get("/api/baixar/<nome>")
 def baixar(nome):
     return send_file(SAIDA / Path(nome).name, as_attachment=True)
@@ -153,7 +161,7 @@ input[type=password],input[type=number]{padding:8px;border:1px solid var(--bd);b
     </div>
     <div id="wrap"><img id="img"><div id="selo"></div></div>
   </div>
-  <div class="row" style="margin-top:12px"><button id="go" disabled>ASSINAR</button><span id="st"></span></div>
+  <div class="row" style="margin-top:12px"><button id="go" disabled>ASSINAR</button><button class="sec" id="pasta">Abrir pasta dos assinados</button><span id="st"></span></div>
   <div id="res" style="margin-top:10px"></div>
 </div>
 </main>
@@ -192,6 +200,7 @@ $('go').onclick=async()=>{$('go').disabled=true;$('st').textContent='Assinando�
   const r=await (await api('/api/assinar',{method:'POST',body:f})).json();$('st').textContent='';$('go').disabled=false;
   if(r.erro){$('res').innerHTML=`<span class=err>${r.erro}</span>`;return}
   $('res').innerHTML=r.resultados.map(x=>x.ok?`<div class=ok>✔ ${x.arquivo.replace(/</g,'&lt;')}</div>`:`<div class=err>✘ ${(x.arquivo+': '+x.erro).replace(/</g,'&lt;')}</div>`).join('')+`<div class=mut>Salvos em ${r.pasta}</div>`};
+$('pasta').onclick=()=>api('/api/abrir-pasta',{method:'POST'});
 cert();
 </script></html>"""
 
