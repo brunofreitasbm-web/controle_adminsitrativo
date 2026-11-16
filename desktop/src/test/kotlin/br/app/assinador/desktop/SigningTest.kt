@@ -101,6 +101,26 @@ class SigningTest {
         }
     }
 
+    @Test fun everyPolicyVersionIsEmbeddedWithItsOwnOidAndHash() {
+        val signer = made().signer
+        for (v in PolicyVersion.values()) {
+            val out = tmp.newFile()
+            PadesSigner.sign(signer, blankPdf(1, "p_${v.name}.pdf"), out, StampSpec(0, 0.1f, 0.8f, true), policy = v)
+            val bytes = out.readBytes()
+            PDDocument.load(out).use { doc ->
+                val sig = doc.signatureDictionaries.first()
+                val cms = org.bouncycastle.cms.CMSSignedData(
+                    org.bouncycastle.cms.CMSProcessableByteArray(sig.getSignedContent(bytes)), sig.getContents(bytes))
+                val attr = cms.signerInfos.signers.first().signedAttributes.get(org.bouncycastle.asn1.pkcs.PKCSObjectIdentifiers.id_aa_ets_sigPolicyId)
+                val id = org.bouncycastle.asn1.esf.SignaturePolicyId.getInstance(attr.attrValues.getObjectAt(0))
+                assertEquals(v.oid, id.sigPolicyId.id)
+                val hex = id.sigPolicyHash.hashValue.octets.joinToString("") { "%02x".format(it) }
+                assertEquals(v.sha256, hex)
+            }
+            assertEquals(SigStatus.VALID, SignatureVerifier.verify(out)[0].status)
+        }
+    }
+
     @Test fun loadsPfxAndRejectsWrongPassword() {
         val m = made("correta")
         val signer = CertificateStore.load(m.pfx, "correta".toCharArray())

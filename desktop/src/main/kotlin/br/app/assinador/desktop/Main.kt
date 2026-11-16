@@ -146,6 +146,11 @@ private class App : JFrame("Assinar PDF (certificado A1)") {
     private val firstRadio = JRadioButton("Primeira página")
     private val numRadio = JRadioButton("Página nº")
     private val pageSpin = JSpinner(SpinnerNumberModel(1, 1, 9999, 1))
+    private val policyBox = javax.swing.JComboBox(PolicyVersion.values()).apply {
+        selectedItem = PolicyVersion.values().firstOrNull { it.name == prefs.get("policy", "V1_3") } ?: PolicyVersion.V1_3
+        toolTipText = "Versão da política de assinatura ICP-Brasil gravada na assinatura"
+        addActionListener { prefs.put("policy", (selectedItem as PolicyVersion).name) }
+    }
     private val log = JTextArea(6, 40).apply { isEditable = false; font = Font(Font.MONOSPACED, Font.PLAIN, 12) }
     private val signBtn = JButton("ASSINAR").apply { font = font.deriveFont(Font.BOLD, 14f) }
     private val status = JLabel(" ")
@@ -186,7 +191,7 @@ private class App : JFrame("Assinar PDF (certificado A1)") {
         // --- opções do selo
         ButtonGroup().apply { add(lastRadio); add(firstRadio); add(numRadio) }
         if (!lastRadio.isSelected) firstRadio.isSelected = true
-        val opts = JPanel(FlowLayout(FlowLayout.LEFT, 6, 2)).apply { add(visibleBox); add(lastRadio); add(firstRadio); add(numRadio); add(pageSpin) }
+        val opts = JPanel(FlowLayout(FlowLayout.LEFT, 6, 2)).apply { add(visibleBox); add(lastRadio); add(firstRadio); add(numRadio); add(pageSpin); add(JLabel("  Política:")); add(policyBox) }
         val changed = { savePrefs(); refreshPreview() }
         visibleBox.addActionListener { changed() }
         listOf(lastRadio, firstRadio, numRadio).forEach { it.addActionListener { changed() } }
@@ -356,9 +361,10 @@ private class App : JFrame("Assinar PDF (certificado A1)") {
         val pageIdx = when { lastRadio.isSelected -> -1; firstRadio.isSelected -> 0; else -> (pageSpin.value as Int) - 1 }
         val stamp = StampSpec(pageIdx, preview.stampX, preview.stampY, visibleBox.isSelected)
         signBtn.isEnabled = false
+        log("Política: ${(policyBox.selectedItem as PolicyVersion).label}")
         object : SwingWorker<List<FileResult>, Int>() {
             override fun doInBackground(): List<FileResult> =
-                BatchSigner.run(s, files, stamp) { publish(it) }
+                BatchSigner.run(s, files, stamp, policyBox.selectedItem as PolicyVersion) { publish(it) }
             override fun process(chunks: MutableList<Int>) { status.text = "Assinando ${chunks.last() + 1} de ${files.size}…" }
             override fun done() {
                 signBtn.isEnabled = true; status.text = " "

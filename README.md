@@ -40,6 +40,10 @@ O Windows SmartScreen pode avisar "editor desconhecido", porque o .exe não tem 
 arraste os PDFs para a janela → arraste o selo na prévia → **ASSINAR**. Saída: pasta `Assinados` ao lado de cada PDF
 (`<nome>_assinado.pdf`, nunca sobrescreve). Também verifica a integridade das assinaturas de um PDF.
 
+**Política de assinatura:** a janela tem a caixa *Política* (AD-RB v1.3, v1.2 ou v1.1, com os hashes da LPA oficial do ITI).
+Em 16/11/2026 o Verificador do ITI reprovou o atributo `sigPolicyId` da v1.3 (hash "incorreto", política em branco no relatório),
+embora o hash gravado seja idêntico ao da LPA. Se a v1.3 continuar reprovada, assine com a v1.2 ou v1.1.
+
 Limites: só certificado em arquivo (.pfx/.p12); A3/token e o repositório de certificados do Windows não são suportados. Mesmas ressalvas
 de conformidade ICP-Brasil e de `/Rotate` do app Android.
 

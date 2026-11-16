@@ -137,11 +137,21 @@ data class StampSpec(val pageIndex: Int, val x: Float, val y: Float, val visible
     }
 }
 
+/** Versões da política AD-RB (PAdES) da LPA da ICP-Brasil: OID e SHA-256 do arquivo .der, conforme a LPA oficial. */
+enum class PolicyVersion(val label: String, val oid: String, val file: String, val sha256: String) {
+    V1_3("AD-RB v1.3 (mais recente)", "2.16.76.1.7.1.11.1.3", "PA_PAdES_AD_RB_v1_3.der", "23da544aef71f7a75dc85fa6e17a83875741e4baef41ec178258a5c86ace54dd"),
+    V1_2("AD-RB v1.2", "2.16.76.1.7.1.11.1.2", "PA_PAdES_AD_RB_v1_2.der", "84ed4620c6531e4a4853adecc9e2496926c823418dd3141963ed9c4f9704a03d"),
+    V1_1("AD-RB v1.1", "2.16.76.1.7.1.11.1.1", "PA_PAdES_AD_RB_v1_1.der", "95752d26ca974d46675ae7fb787b606a71ea941f26b59f6b6a321f97d63b9cb1");
+
+    val uri: String get() = "http://politicas.icpbrasil.gov.br/$file"
+    override fun toString() = label
+}
+
 object PadesSigner {
     private val provider = BouncyCastleProvider()
 
     /** Assina [input] e grava o resultado em [output]. O original nunca é alterado. */
-    fun sign(signer: SignerKey, input: File, output: File, stamp: StampSpec, now: ZonedDateTime = ZonedDateTime.now()) {
+    fun sign(signer: SignerKey, input: File, output: File, stamp: StampSpec, now: ZonedDateTime = ZonedDateTime.now(), policy: PolicyVersion = PolicyVersion.V1_3) {
         PDDocument.load(input).use { doc ->
             val info = CertificateStore.infoOf(signer.certificate)
 
@@ -167,7 +177,7 @@ object PadesSigner {
                 FileOutputStream(output).use { out ->
                     val external = doc.saveIncrementalForExternalSigning(out as OutputStream)
                     val content = external.content.readBytes()
-                    external.setSignature(cms(signer, content))
+                    external.setSignature(cms(signer, content, policy))
                 }
             } finally {
                 options.close()
@@ -243,7 +253,7 @@ object PadesSigner {
     }
 
     /** CMS CAdES-detached AD-RB: SHA-256, cadeia embutida, ESS signing-certificate-v2 e política ICP-Brasil. */
-    internal fun cms(signer: SignerKey, content: ByteArray): ByteArray {
+    internal fun cms(signer: SignerKey, content: ByteArray, policy: PolicyVersion = PolicyVersion.V1_3): ByteArray {
         val cert = signer.certificate
         val certHash = MessageDigest.getInstance("SHA-256").digest(cert.encoded)
         val ess = SigningCertificateV2(ESSCertIDv2(AlgorithmIdentifier(NISTObjectIdentifiers.id_sha256), certHash))
@@ -256,7 +266,7 @@ object PadesSigner {
                 v.add(Attribute(CMSAttributes.contentType, DERSet(parameters[CMSAttributeTableGenerator.CONTENT_TYPE] as ASN1ObjectIdentifier)))
                 v.add(Attribute(CMSAttributes.messageDigest, DERSet(DEROctetString(parameters[CMSAttributeTableGenerator.DIGEST] as ByteArray))))
                 v.add(Attribute(PKCSObjectIdentifiers.id_aa_signingCertificateV2, DERSet(ess)))
-                v.add(Attribute(PKCSObjectIdentifiers.id_aa_ets_sigPolicyId, DERSet(policyId())))
+                v.add(Attribute(PKCSObjectIdentifiers.id_aa_ets_sigPolicyId, DERSet(policyId(policy))))
                 return AttributeTable(DERSet(v))
             }
         }
@@ -272,17 +282,12 @@ object PadesSigner {
         return gen.generate(CMSProcessableByteArray(content), false).encoded
     }
 
-    /** Política AD-RB v1.3 (PAdES) da LPA da ICP-Brasil: OID e SHA-256 do arquivo PA_PAdES_AD_RB_v1_3.der. */
-    private const val POLICY_OID = "2.16.76.1.7.1.11.1.3"
-    private const val POLICY_URI = "http://politicas.icpbrasil.gov.br/PA_PAdES_AD_RB_v1_3.der"
-    private const val POLICY_SHA256 = "23da544aef71f7a75dc85fa6e17a83875741e4baef41ec178258a5c86ace54dd"
-
-    internal fun policyId(): SignaturePolicyId {
-        val hash = POLICY_SHA256.chunked(2).map { it.toInt(16).toByte() }.toByteArray()
+    internal fun policyId(policy: PolicyVersion = PolicyVersion.V1_3): SignaturePolicyId {
+        val hash = policy.sha256.chunked(2).map { it.toInt(16).toByte() }.toByteArray()
         return SignaturePolicyId(
-            ASN1ObjectIdentifier(POLICY_OID),
+            ASN1ObjectIdentifier(policy.oid),
             OtherHashAlgAndValue(AlgorithmIdentifier(NISTObjectIdentifiers.id_sha256), DEROctetString(hash)),
-            SigPolicyQualifiers(arrayOf(SigPolicyQualifierInfo(PKCSObjectIdentifiers.id_spq_ets_uri, DERIA5String(POLICY_URI)))),
+            SigPolicyQualifiers(arrayOf(SigPolicyQualifierInfo(PKCSObjectIdentifiers.id_spq_ets_uri, DERIA5String(policy.uri)))),
         )
     }
 
@@ -308,13 +313,13 @@ object BatchSigner {
     const val OUTPUT_DIR = "Assinados"
 
     /** Assina todos; uma falha não interrompe os demais. Saída: <pasta do PDF>/Assinados/<nome>_assinado.pdf */
-    fun run(signer: SignerKey, files: List<File>, stamp: StampSpec, onProgress: (Int) -> Unit = {}): List<FileResult> =
+    fun run(signer: SignerKey, files: List<File>, stamp: StampSpec, policy: PolicyVersion = PolicyVersion.V1_3, onProgress: (Int) -> Unit = {}): List<FileResult> =
         files.mapIndexed { i, file ->
             onProgress(i)
             try {
                 val dir = File(file.absoluteFile.parentFile, OUTPUT_DIR).also { it.mkdirs() }
                 val out = uniqueFile(dir, file.nameWithoutExtension + "_assinado.pdf")
-                PadesSigner.sign(signer, file, out, stamp)
+                PadesSigner.sign(signer, file, out, stamp, policy = policy)
                 FileResult(file.name, out, null)
             } catch (e: Exception) {
                 FileResult(file.name, null, e.message ?: e.javaClass.simpleName)
