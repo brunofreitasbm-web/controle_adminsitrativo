@@ -6,3 +6,6 @@ local.properties
 captures/
 *.pfx
 *.p12
+
+local/dados/
+__pycache__/
