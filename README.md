@@ -1,4 +1,4 @@
-# Assinar PDF (Android, certificado A1)
+# Assinar PDF (Android e Windows, certificado A1)
 
 App pessoal para assinar PDFs com certificado A1 (.pfx/.p12) direto no celular.
 
@@ -26,3 +26,25 @@ Ative "instalar apps desconhecidos" para o navegador/Arquivos.
 
 ## Desenvolvimento
 `./gradlew :app:testDebugUnitTest :app:assembleDebug` (precisa de Android SDK 34 e JDK 17+).
+
+## Windows (.exe)
+Versão para PC em `desktop/` (Kotlin + Swing, mesmo motor de assinatura PAdES AD-RB do app Android).
+
+**Instalar:** GitHub → aba **Actions → Build Windows (.exe)** → artefato `assinador-windows`:
+- `Assinar PDF-1.0.0.exe`: instalador. Cria o atalho na **Área de Trabalho** e no Menu Iniciar. Não precisa ter Java instalado.
+- `Assinar-PDF-portatil.zip`: sem instalar. Extraia, rode `Criar-atalho-na-area-de-trabalho.bat` e use o atalho.
+
+O Windows SmartScreen pode avisar "editor desconhecido", porque o .exe não tem assinatura de código. Clique em *Mais informações → Executar assim mesmo*.
+
+**Uso:** *Escolher certificado A1* (.pfx, senha só em memória; o caminho do arquivo fica lembrado, a senha é pedida a cada abertura) →
+arraste os PDFs para a janela → arraste o selo na prévia → **ASSINAR**. Saída: pasta `Assinados` ao lado de cada PDF
+(`<nome>_assinado.pdf`, nunca sobrescreve). Também verifica a integridade das assinaturas de um PDF.
+
+**Política de assinatura:** a janela tem a caixa *Política* (AD-RB v1.3, v1.2 ou v1.1, com os hashes da LPA oficial do ITI).
+Em 16/11/2026 o Verificador do ITI reprovou o atributo `sigPolicyId` da v1.3 (hash "incorreto", política em branco no relatório),
+embora o hash gravado seja idêntico ao da LPA. Se a v1.3 continuar reprovada, assine com a v1.2 ou v1.1.
+
+Limites: só certificado em arquivo (.pfx/.p12); A3/token e o repositório de certificados do Windows não são suportados. Mesmas ressalvas
+de conformidade ICP-Brasil e de `/Rotate` do app Android.
+
+Desenvolvimento: `cd desktop && ./gradlew test run` (JDK 17+).
